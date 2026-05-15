@@ -10,5 +10,6 @@ def crear_llm():
 
     return ChatOllama(
         base_url=OLLAMA_BASE_URL,
-        model=OLLAMA_MODEL
+        model=OLLAMA_MODEL,
+        streaming=True
     )

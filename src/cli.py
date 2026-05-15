@@ -10,7 +10,8 @@ from .document_builder import (
 
 from .vector_store import (
     almacenar_documento,
-    almacenar_textos
+    almacenar_textos,
+    buscar_documento_por_titulo
 )
 
 from .llm_client import (
@@ -28,6 +29,16 @@ from .memory_manager import (
 from .config import (
     DOCUMENT_CACHE
 )
+
+
+def normalizar_titulo(texto):
+
+    if not texto:
+        return ""
+
+    return " ".join(
+        texto.strip().lower().split()
+    )
 
 
 def guardar_documento_cache(doc):
@@ -63,6 +74,19 @@ def guardar_documento_cache(doc):
 
 
 def registrar_serie(nombre):
+    titulo_norm = normalizar_titulo(
+        nombre
+    )
+
+    existente = buscar_documento_por_titulo(
+        "series_db",
+        nombre,
+        titulo_norm
+    )
+
+    if existente:
+        print("Serie ya registrada. Usando datos locales.")
+        return existente
 
     datos = obtener_datos_serie(
         nombre
@@ -86,6 +110,9 @@ def registrar_serie(nombre):
         metadata={
             "id": documento["id"],
             "titulo": datos.get("tmdb", {}).get("titulo"),
+            "titulo_norm": normalizar_titulo(
+                datos.get("tmdb", {}).get("titulo")
+            ),
             "slug": datos.get("slug")
         }
     )
@@ -138,15 +165,25 @@ def iniciar_chat():
         if pregunta.lower() in {"salir", "exit", "quit"}:
             break
 
+        partes = []
+
+        def _on_chunk(texto):
+            print(texto, end="", flush=True)
+            partes.append(texto)
+
         respuesta = responder(
             llm,
-            pregunta
+            pregunta,
+            on_chunk=_on_chunk
         )
 
-        print(respuesta.content)
+        if not partes:
+            print(respuesta)
+        else:
+            print("")
 
         historial.append(
-            f"Usuario: {pregunta}\nAsistente: {respuesta.content}"
+            f"Usuario: {pregunta}\nAsistente: {respuesta}"
         )
 
     if historial:
