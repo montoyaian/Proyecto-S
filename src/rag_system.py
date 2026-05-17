@@ -11,86 +11,39 @@ from .vector_store import (
 )
 
 
-def recuperar_contexto(query, limite=2):
-
-    store = obtener_vector_store(
-        "series_db"
-    )
-
-    resultados = store.similarity_search(
-        query,
-        k=limite
-    )
-
-    return "\n\n".join(
-        [doc.page_content for doc in resultados]
-    )
+def recuperar_contexto(query, limite=2, serie_id=None):
+    store = obtener_vector_store("series_db")
+    filtro = {"id": serie_id} if serie_id else None
+    resultados = store.similarity_search(query, k=limite, filter=filtro)
+    return "\n\n".join([doc.page_content for doc in resultados])
 
 
-def recuperar_opiniones(query, limite=2):
-
-    store = obtener_vector_store(
-        "opiniones_db"
-    )
-
-    resultados = store.similarity_search(
-        query,
-        k=limite
-    )
-
-    return "\n".join(
-        [doc.page_content for doc in resultados]
-    )
+def recuperar_opiniones(query, limite=2, serie_id=None):
+    store = obtener_vector_store("opiniones_db")
+    filtro = {"serie_id": serie_id} if serie_id else None
+    resultados = store.similarity_search(query, k=limite, filter=filtro)
+    return "\n".join([doc.page_content for doc in resultados])
 
 
-def recuperar_memoria(query, limite=2):
-
-    store = obtener_vector_store(
-        "memoria_usuario"
-    )
-
-    resultados = store.similarity_search(
-        query,
-        k=limite
-    )
-
-    return "\n".join(
-        [doc.page_content for doc in resultados]
-    )
+def recuperar_memoria(query, limite=2, serie_id=None):
+    store = obtener_vector_store("memoria_usuario")
+    resultados = store.similarity_search(query, k=limite)
+    return "\n".join([doc.page_content for doc in resultados])
 
 
 def truncar_fragmento(texto, max_caracteres=300):
-
     if not texto:
         return ""
-
     texto = " ".join(texto.split())
-
     if len(texto) <= max_caracteres:
         return texto
-
     return texto[:max_caracteres].rstrip() + "..."
 
 
 def construir_prompt(contexto, opiniones, memoria, pregunta):
-    contexto = "\n\n".join(
-        truncar_fragmento(fragmento)
-        for fragmento in contexto.split("\n\n")
-        if fragmento.strip()
-    )
-
-    opiniones = "\n".join(
-        truncar_fragmento(fragmento)
-        for fragmento in opiniones.split("\n")
-        if fragmento.strip()
-    )
-
-    memoria = "\n".join(
-        truncar_fragmento(fragmento)
-        for fragmento in memoria.split("\n")
-        if fragmento.strip()
-    )
-
+    contexto = "\n\n".join(truncar_fragmento(f) for f in contexto.split("\n\n") if f.strip())
+    opiniones = "\n".join(truncar_fragmento(f) for f in opiniones.split("\n") if f.strip())
+    memoria = "\n".join(truncar_fragmento(f) for f in memoria.split("\n") if f.strip())
     return (
         "Eres un asistente experto en series y anime. "
         "Usa el contexto para responder con recomendaciones claras.\n\n"
@@ -101,75 +54,31 @@ def construir_prompt(contexto, opiniones, memoria, pregunta):
     )
 
 
-def responder(llm, pregunta, on_chunk=None):
-    inicio_total = time.perf_counter()
-
-    def _medir(nombre, funcion, *args, **kwargs):
-        inicio = time.perf_counter()
-        resultado = funcion(*args, **kwargs)
-        duracion = time.perf_counter() - inicio
-        print(f"[timing] {nombre}: {duracion:.3f}s")
-        return resultado
-
+def responder(llm, pregunta, on_chunk=None, serie_id=None):
     with ThreadPoolExecutor(max_workers=3) as executor:
-        contexto_fut = executor.submit(
-            _medir,
-            "recuperar_contexto",
-            recuperar_contexto,
-            pregunta
-        )
-        opiniones_fut = executor.submit(
-            _medir,
-            "recuperar_opiniones",
-            recuperar_opiniones,
-            pregunta
-        )
-        memoria_fut = executor.submit(
-            _medir,
-            "recuperar_memoria",
-            recuperar_memoria,
-            pregunta
-        )
-
+        contexto_fut = executor.submit(recuperar_contexto, pregunta, serie_id=serie_id)
+        opiniones_fut = executor.submit(recuperar_opiniones, pregunta, serie_id=serie_id)
+        memoria_fut = executor.submit(recuperar_memoria, pregunta, serie_id=serie_id)
         contexto = contexto_fut.result()
         opiniones = opiniones_fut.result()
         memoria = memoria_fut.result()
-
-    prompt = construir_prompt(
-        contexto,
-        opiniones,
-        memoria,
-        pregunta
-    )
-
+    prompt = construir_prompt(contexto, opiniones, memoria, pregunta)
     mensajes = [
-        SystemMessage(
-            content="Eres un asistente local especializado en series."
-        ),
-        HumanMessage(
-            content=prompt
-        )
+        SystemMessage(content="Eres un asistente local especializado en series."),
+        HumanMessage(content=prompt)
     ]
-
-    inicio_llm = time.perf_counter()
-
     if on_chunk:
         partes = []
         for chunk in llm.stream(mensajes):
-            contenido = getattr(chunk, "content", "") or ""
+            contenido = getattr(chunk, "text", None)
+            if contenido is None:
+                contenido = getattr(chunk, "content", "") or ""
+                if isinstance(contenido, list):
+                    contenido = "".join(item.get("text", "") for item in contenido if isinstance(item, dict))
             if contenido:
                 on_chunk(contenido)
                 partes.append(contenido)
-        contenido = "".join(partes)
+        return "".join(partes)
     else:
-        respuesta = llm.invoke(
-            mensajes
-        )
-        contenido = getattr(respuesta, "content", "") or ""
-
-    duracion_llm = time.perf_counter() - inicio_llm
-    duracion_total = time.perf_counter() - inicio_total
-    print(f"[timing] llm.invoke: {duracion_llm:.3f}s")
-    print(f"[timing] total_respuesta: {duracion_total:.3f}s")
-
-    return contenido
+        respuesta = llm.invoke(mensajes)
+        return getattr(respuesta, "content", "") or ""

@@ -43,6 +43,24 @@ OLLAMA_MODEL = get_env(
     "qwen3:8b"
 )
 
+AWS_REGION = get_env(
+    "AWS_REGION",
+    "us-east-1"
+)
+
+AWS_ACCESS_KEY_ID = get_env(
+    "AWS_ACCESS_KEY_ID"
+)
+
+AWS_SECRET_ACCESS_KEY = get_env(
+    "AWS_SECRET_ACCESS_KEY"
+)
+
+BEDROCK_MODEL = get_env(
+    "BEDROCK_MODEL",
+    "us.meta.llama3-1-8b-instruct-v1:0"
+)
+
 EMBEDDING_MODEL = get_env(
     "EMBEDDING_MODEL",
     "intfloat/multilingual-e5-base"

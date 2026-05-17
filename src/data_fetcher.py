@@ -7,129 +7,57 @@ from api import (
     sanitizar_tmdb
 )
 
-from opiniones import (
-    buscar_slug_trakt,
-    obtener_todos_comentarios,
-    limpiar_texto
+from src.config import (
+    TMDB_API_KEY
 )
 
-from src.config import (
-    TMDB_API_KEY,
-    TRAKT_CLIENT_ID
+from .wikipedia_fetcher import (
+    obtener_articulo_completo
 )
 
 
 def seleccionar_resultado_tmdb(resultados):
-
     if not resultados:
         return None
-
     return resultados[0]
 
 
 def extraer_slug_trakt(datos_tmdb):
-
     if not datos_tmdb:
         return None
-
     titulo = datos_tmdb.get("name", "").strip().lower()
-
-    titulo = re.sub(
-        r"[^a-z0-9\s-]",
-        "",
-        titulo
-    )
-
-    titulo = re.sub(
-        r"\s+",
-        "-",
-        titulo
-    )
-
-    titulo = re.sub(
-        r"-+",
-        "-",
-        titulo
-    )
-
+    titulo = re.sub(r"[^a-z0-9\s-]", "", titulo)
+    titulo = re.sub(r"\s+", "-", titulo)
+    titulo = re.sub(r"-+", "-", titulo)
     return titulo
 
 
-def construir_dataset_comentarios(comentarios):
-
-    dataset = []
-
-    for indice, comentario in enumerate(comentarios, start=1):
-
-        texto = comentario.get("comment", "")
-
-        texto_limpio = limpiar_texto(texto)
-
-        if texto_limpio:
-
-            dataset.append({
-                "id": indice,
-                "comentario": texto_limpio
-            })
-
-    return dataset
-
-
 def obtener_datos_serie(nombre_serie):
-
     if not TMDB_API_KEY:
         print("TMDB_API_KEY no configurado.")
         return None
-
     resultado = buscar_serie(nombre_serie)
-
     if not resultado or not resultado.get("results"):
+        print("No se encontraron resultados en TMDB")
         return None
-
-    seleccionado = seleccionar_resultado_tmdb(
-        resultado["results"]
-    )
-
+    seleccionado = seleccionar_resultado_tmdb(resultado["results"])
     tv_id = seleccionado.get("id")
-
     if not tv_id:
+        print("No se pudo obtener TV ID")
         return None
-
-    detalles = obtener_detalles(
-        tv_id
-    )
-
-    informacion_limpia = sanitizar_tmdb(
-        detalles
-    )
-
-    personajes = obtener_personajes(
-        tv_id
-    )
-
-    slug = buscar_slug_trakt(
-        nombre_serie
-    )
-
-    if not slug:
-        slug = extraer_slug_trakt(
-            seleccionado
-        )
-
-    comentarios = []
-
-    if slug and TRAKT_CLIENT_ID:
-        comentarios = obtener_todos_comentarios(
-            slug
-        )
-
-    dataset_comentarios = construir_dataset_comentarios(
-        comentarios
-    )
-
+    detalles = obtener_detalles(tv_id)
+    informacion_limpia = sanitizar_tmdb(detalles)
+    personajes = obtener_personajes(tv_id)
+    slug = extraer_slug_trakt(seleccionado)
+    wikipedia = {}
+    titulo_wikipedia = informacion_limpia.get("titulo") or nombre_serie
+    try:
+        wikipedia = obtener_articulo_completo(titulo_wikipedia)
+    except Exception as e:
+        print(f"Error obteniendo Wikipedia: {e}")
     return {
         "tmdb": informacion_limpia,
         "personajes": personajes,
-        "comentarios": dataset_comentarios,
+        "wikipedia": wikipedia,
         "slug": slug
     }

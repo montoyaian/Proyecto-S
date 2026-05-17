@@ -1,7 +1,9 @@
 langchain
 langchain-community
+langchain-aws
 chromadb
 sentence-transformers
 pandas
 requests
 python-dotenv
+beautifulsoup4
